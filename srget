@@ -49,8 +49,14 @@ def getHeadRequest(serv, objName):
 def mkDownloadRequest(serv, objName):
 	return ("GET {o} HTTP/1.1\r\n"+"Host: {s}\r\n\r\n").format(o=objName, s=serv)
 
+def mkResumeRequest(serv, objName, start_pos, end_pos):
+	return ("GET {o} HTTP/1.1\r\n"+"Host: {s}\r\n" + "Range: bytes={sp}-{ep}\r\n\r\n").format(o=objName, s=serv,sp=start_pos,ep=end_pos)
+
+
 def connect(servName,portIn,startByte):
 	print servName
+
+	saveHeader = open("savedHeader.txt",'w')
 	complete = False
 	sock = c_sock.socket(c_sock.AF_INET, c_sock.SOCK_STREAM)
 	head_sock = c_sock.socket(c_sock.AF_INET,c_sock.SOCK_STREAM)
@@ -65,14 +71,15 @@ def connect(servName,portIn,startByte):
 	contentLength = float(head[start:start+head[start:].find('\r\n')])
 	
 	sock.close
-	
-	request = mkDownloadRequest(servName,"/")
+	print headLength,"head"
+	print contentLength,"content"
+	request = mkResumeRequest(servName,"/",0,contentLength-1)
 
 	sock.send(request)
 	f=open(output_file,'w')
 	while True:
 		data = sock.recv(100)
-		print data + '---------------------------------'
+		#print data + '---------------------------------'
 		if len(data) == 0:
 			sock.close()
 
