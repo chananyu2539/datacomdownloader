@@ -55,6 +55,9 @@ def mkDownloadRequest(serv, objName):
 def mkResumeRequest(serv, objName, start_pos, end_pos):
 	return ("GET {o} HTTP/1.1\r\n"+"Host: {s}\r\n" + "Range: bytes={sp}-{ep}\r\n\r\n").format(o=objName, s=serv,sp=start_pos,ep=end_pos)
 
+def mkResumReqModified(serv,objName,start_pos,end_pos,tag):
+	return ("GET {o} HTTP/1.1\r\n"+"Host: {s}\r\n" + "Range: bytes={sp}-{ep}\r\n"+"If-Range: {t}\r\n\r\n").format(o=objName, s=serv,sp=start_pos,ep=end_pos,t=tag)
+
 def deleteHeader(file,headLength):
 	f= open(file,"rb")
 	data = f.read()
@@ -64,10 +67,10 @@ def deleteHeader(file,headLength):
 	f.close()
 
 
+
 def connect(servName,portIn,startByte,path):
 	print servName
-
-	saveHeader = open("savedHeader.txt",'w')
+	saveHeader = open(output_file+"_Header.txt",'wb')
 	complete = False
 	sock = c_sock.socket(c_sock.AF_INET, c_sock.SOCK_STREAM)
 	head_sock = c_sock.socket(c_sock.AF_INET,c_sock.SOCK_STREAM)
@@ -88,7 +91,7 @@ def connect(servName,portIn,startByte,path):
 	request = mkResumeRequest(servName,path,0,contentLength-1)
 
 	sock.send(request)
-	f=open(output_file,'w')
+	f=open(output_file,'wb')
 	while True:
 		data = sock.recv(100)
 		print data + '---------------------------------'
@@ -101,11 +104,21 @@ def connect(servName,portIn,startByte,path):
 		f.write(data)
 	return headLength
 	
-addr,dest,port,path = setAddress(dest)
-print dest,port
-# Check the scheme
-if addr.scheme == 'http':
-	head_len = connect(dest,port,0,path)
-	deleteHeader(output_file,head_len)
+if not (os.path.exists(output_file)):
+	addr,dest,port,path = setAddress(dest)
+	print dest,port
+	# Check the scheme
+	if addr.scheme == 'http':
+		head_len = connect(dest,port,0,path)
+		deleteHeader(output_file,head_len)
+	else:
+		print "Wrong format"
 else:
-	print "Wrong format"
+	
+	h=open(output_file+"_Header.txt","rb")
+	head = h.read()
+	start_i = head.find('Content-Length')+16
+	totalLength = float(head[start_i:start_i+head[start_i:].find('\r\n')])
+	start_etag = head.find('ETag: ')+7
+	ETag= head[start_etag:start_etag+head[start_etag:].find('\r\n')-1]
+	print ETag
