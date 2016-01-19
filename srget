@@ -61,7 +61,7 @@ def deleteHeader(file,headLength):
 	f.close()
 	f = open(file,'wb')
 	f.write(data[headLength:])
-	f.close
+	f.close()
 
 
 def connect(servName,portIn,startByte,path):
@@ -77,6 +77,7 @@ def connect(servName,portIn,startByte,path):
 	reqHead = getHeadRequest(servName,path)
 	head_sock.send(reqHead)
 	head = head_sock.recv(1024)
+	saveHeader.write(head)
 	start = head.find('Content-Length')+16
 	headLength =  len(head)
 	contentLength = float(head[start:start+head[start:].find('\r\n')])
