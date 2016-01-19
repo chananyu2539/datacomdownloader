@@ -9,6 +9,7 @@ output_file = None
 option_c = False
 numConn = 5
 dest = None
+path = '/'
 port = 80
 
 # Organize input-command line
@@ -36,8 +37,10 @@ def setAddress(addIn):
 		port = fullAddress.port
 	else:
 		port = 80
+	path = fullAddress.path
 
-	return fullAddress,dest,port
+	return fullAddress,dest,port,path
+
 
 def getSize(fileobject):
     fileobject.seek(0,2) 		# move the cursor to the end of the file
@@ -52,8 +55,16 @@ def mkDownloadRequest(serv, objName):
 def mkResumeRequest(serv, objName, start_pos, end_pos):
 	return ("GET {o} HTTP/1.1\r\n"+"Host: {s}\r\n" + "Range: bytes={sp}-{ep}\r\n\r\n").format(o=objName, s=serv,sp=start_pos,ep=end_pos)
 
+def deleteHeader(file,headLength):
+	f= open(file,"rb")
+	data = f.read()
+	f.close()
+	f = open(file,'wb')
+	f.write(data[headLength:])
+	f.close
 
-def connect(servName,portIn,startByte):
+
+def connect(servName,portIn,startByte,path):
 	print servName
 
 	saveHeader = open("savedHeader.txt",'w')
@@ -63,7 +74,7 @@ def connect(servName,portIn,startByte):
 	head_sock.connect((servName, portIn))
 	sock.connect((servName,portIn))
 	# get content length from header
-	reqHead = getHeadRequest(servName,"/")
+	reqHead = getHeadRequest(servName,path)
 	head_sock.send(reqHead)
 	head = head_sock.recv(1024)
 	start = head.find('Content-Length')+16
@@ -71,15 +82,15 @@ def connect(servName,portIn,startByte):
 	contentLength = float(head[start:start+head[start:].find('\r\n')])
 	
 	sock.close
-	print headLength,"head"
+	#print head,"head"
 	print contentLength,"content"
-	request = mkResumeRequest(servName,"/",0,contentLength-1)
+	request = mkResumeRequest(servName,path,0,contentLength-1)
 
 	sock.send(request)
 	f=open(output_file,'w')
 	while True:
 		data = sock.recv(100)
-		#print data + '---------------------------------'
+		print data + '---------------------------------'
 		if len(data) == 0:
 			sock.close()
 
@@ -87,12 +98,13 @@ def connect(servName,portIn,startByte):
 				complete = True
 			break
 		f.write(data)
-	print complete,getSize(f)
+	return headLength
 	
-addr,dest,port = setAddress(dest)
+addr,dest,port,path = setAddress(dest)
 print dest,port
 # Check the scheme
 if addr.scheme == 'http':
-	connect(dest,port,0)
+	head_len = connect(dest,port,0,path)
+	deleteHeader(output_file,head_len)
 else:
 	print "Wrong format"
