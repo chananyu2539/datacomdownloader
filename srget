@@ -14,111 +14,178 @@ port = 80
 
 # Organize input-command line
 if len(sys.argv) == 4:
-	output_file = sys.argv[2]
-	dest = sys.argv[3]
+    output_file = sys.argv[2]
+    dest = sys.argv[3]
 elif len(sys.argv) == 5:
-	output_file = sys.argv[2]
-	option_c = True
-	dest = sys.argv[4]
+    output_file = sys.argv[2]
+    option_c = True
+    dest = sys.argv[4]
 elif len(sys.argv) == 6:
-	output_file = sys.argv[2]
-	option_c = True
-	numConn = sys.argv[4]
-	dest = sys.argv[5]
+    output_file = sys.argv[2]
+    option_c = True
+    numConn = sys.argv[4]
+    dest = sys.argv[5]
 
 # Organize address and port for connection
 def setAddress(addIn):
-	fullAddress = urlparse.urlparse(addIn)
-	if (fullAddress.netloc).find(":") != -1:
-		dest = fullAddress.netloc[:(fullAddress.netloc).find(":")]
-	else:
-		dest = fullAddress.netloc
-	if fullAddress.port != None:
-		port = fullAddress.port
-	else:
-		port = 80
-	path = fullAddress.path
+    fullAddress = urlparse.urlparse(addIn)
+    if (fullAddress.netloc).find(":") != -1:
+        dest = fullAddress.netloc[:(fullAddress.netloc).find(":")]
+    else:
+        dest = fullAddress.netloc
+    if fullAddress.port != None:
+        port = fullAddress.port
+    else:
+        port = 80
+    path = fullAddress.path
 
-	return fullAddress,dest,port,path
+    return fullAddress,dest,port,path
 
 
 def getSize(fileobject):
-    fileobject.seek(0,2) 		# move the cursor to the end of the file
-    return fileobject.tell()
+    with open(fileobject,'rb') as f:
+        f.seek(0,2)        # move the cursor to the end of the file
+        return f.tell()
     
 def getHeadRequest(serv, objName):
-	return ("HEAD {o} HTTP/1.1\r\n"+"Host: {s}\r\n\r\n").format(o=objName, s=serv)
+    return ("HEAD {o} HTTP/1.1\r\n"+
+        "Host: {s}\r\n\r\n").format(o=objName, s=serv)
 
 def mkDownloadRequest(serv, objName):
-	return ("GET {o} HTTP/1.1\r\n"+"Host: {s}\r\n\r\n").format(o=objName, s=serv)
+    return ("GET {o} HTTP/1.1\r\n"+
+        "Host: {s}\r\n\r\n").format(o=objName, s=serv)
 
 def mkResumeRequest(serv, objName, start_pos, end_pos):
-	return ("GET {o} HTTP/1.1\r\n"+"Host: {s}\r\n" + "Range: bytes={sp}-{ep}\r\n\r\n").format(o=objName, s=serv,sp=start_pos,ep=end_pos)
+    return ("GET {o} HTTP/1.1\r\n"+
+        "Host: {s}\r\n" + 
+        "Range: bytes={sp}-{ep}\r\n\r\n").format(o=objName, s=serv,sp=start_pos,ep=end_pos)
 
 def mkResumReqModified(serv,objName,start_pos,end_pos,tag):
-	return ("GET {o} HTTP/1.1\r\n"+"Host: {s}\r\n" + "Range: bytes={sp}-{ep}\r\n"+"If-Range: {t}\r\n\r\n").format(o=objName, s=serv,sp=start_pos,ep=end_pos,t=tag)
+    return ("GET {o} HTTP/1.1\r\n"+"Host: {s}\r\n" + 
+        "Range: bytes={sp}-{ep}\r\n"+
+        "If-Range: {t}\r\n\r\n").format(o=objName, s=serv,sp=start_pos,ep=end_pos,t=tag)
 
-def deleteHeader(file,headLength):
-	f= open(file,"rb")
-	data = f.read()
-	f.close()
-	f = open(file,'wb')
-	f.write(data[headLength:])
-	f.close()
+def deleteHeader(file):
+    with open(file,'rb') as f:
+        data = f.read()
+    with open(file,'wb') as f:
+        f.write(data[data.find("\r\n\r\n")+4:])
+    # f= open(file,"rb")
+    # data = f.read()
+    # f.close()
+    # f = open(file,'wb')
+    # f.write(data[headLength:])
+    # f.close()
+def split_header(out_file):
+    header_dict = dict()
+    with open(out_file,'rb') as h:
+        all_data = h.read()        
+    header_list = all_data.split("\r\n")
+    for each in header_list[1:-2]:
+        current_element = each.split(": ")
+        header_dict[current_element[0]] = current_element[1]
+    return header_dict    
+
+
+def get_head(servName,portIn,reqHead,output_head):
+    head_sock = c_sock.socket(c_sock.AF_INET,c_sock.SOCK_STREAM)
+
+    print servName,portIn
+    head_sock.connect((servName,portIn))
+
+    head_sock.send(reqHead)
+    data = ""
+    with open(output_head,'wb') as h:
+        while True:
+            print 'here'
+            data += head_sock.recv(1024000)
+
+            print data[-4:]
+            if data[-4:] == "\r\n\r\n":
+                print 'yes'
+                head_sock.close()
+                break
+        h.write(data)
+
+    return len(data)
+
+
+
 
 
 
 def connect(servName,portIn,startByte,path):
-	print servName
-	saveHeader = open(output_file+"_Header.txt",'wb')
-	complete = False
-	sock = c_sock.socket(c_sock.AF_INET, c_sock.SOCK_STREAM)
-	head_sock = c_sock.socket(c_sock.AF_INET,c_sock.SOCK_STREAM)
-	head_sock.connect((servName, portIn))
-	sock.connect((servName,portIn))
-	# get content length from header
-	reqHead = getHeadRequest(servName,path)
-	head_sock.send(reqHead)
-	head = head_sock.recv(1024)
-	saveHeader.write(head)
-	start = head.find('Content-Length')+16
-	headLength =  len(head)
-	contentLength = float(head[start:start+head[start:].find('\r\n')])
-	
-	sock.close
-	#print head,"head"
-	print contentLength,"content"
-	request = mkResumeRequest(servName,path,0,contentLength-1)
+    complete = False
 
-	sock.send(request)
-	f=open(output_file,'wb')
-	while True:
-		data = sock.recv(100)
-		print data + '---------------------------------'
-		if len(data) == 0:
-			sock.close()
+    # get content length from header
+    reqHead = getHeadRequest(servName,path)
+    get_head(servName,portIn,reqHead,output_file+'.head')
+    header_content = split_header(output_file+".head")
+    content_length = int(header_content['Content-Length'])
+    header_length = getSize(output_file+'.head')
+    print header_length
+    
+    request = mkResumeRequest(servName,path,0,content_length-1)
+    print request
+    sock = c_sock.socket(c_sock.AF_INET, c_sock.SOCK_STREAM)
+    print servName,portIn
+    sock.connect((servName,portIn))
 
-			if getSize(f) == contentLength + headLength:
-				complete = True
-			break
-		f.write(data)
-	return headLength
-	
+
+
+    sock.send(request)
+    data = ""
+    with open(output_file,'wb') as f:
+        while True:
+            data += sock.recv(1024000)
+            if len(data) >= content_length+header_length:
+                sock.close()
+                complete = True
+                break
+        f.write(data)
+    
+    
 if not (os.path.exists(output_file)):
-	addr,dest,port,path = setAddress(dest)
-	print dest,port
-	# Check the scheme
-	if addr.scheme == 'http':
-		head_len = connect(dest,port,0,path)
-		deleteHeader(output_file,head_len)
-	else:
-		print "Wrong format"
+    addr,dest,port,path = setAddress(dest)
+    print dest,port
+    # Check the scheme
+    if addr.scheme == 'http':
+        connection_a = connect(dest,port,0,path)
+        deleteHeader(output_file)
+    else:
+        print "Wrong format"
+    
 else:
-	
-	h=open(output_file+"_Header.txt","rb")
-	head = h.read()
-	start_i = head.find('Content-Length')+16
-	totalLength = float(head[start_i:start_i+head[start_i:].find('\r\n')])
-	start_etag = head.find('ETag: ')+7
-	ETag= head[start_etag:start_etag+head[start_etag:].find('\r\n')-1]
-	print ETag
+    resumable = False
+    header_dict = split_header(output_file+".head")
+    total_content_length = int(header_dict["Content-Length"])
+    try:
+        ETag = header_dict["ETag"]
+        resumable = True
+    
+    except:
+        try:
+            date_modified = header_dict["Last-Modified"]
+            resumable = True
+        except:
+            resumable = False
+
+    if resumable:
+        file_size = getSize(output_file)
+        print file_size,total_content_length
+        if(total_content_length != file_size):
+            print "Resume downloading"
+        else:
+            print "File already existed"
+    else:
+        print "Your file cannot be resume. Start new downloading"
+        addr,dest,port,path = setAddress(dest)
+        print dest,port
+        # Check the scheme
+        if addr.scheme == 'http':
+            connection_a = connect(dest,port,0,path)
+            deleteHeader(output_file)
+        else:
+            print "Wrong format"
+
+
