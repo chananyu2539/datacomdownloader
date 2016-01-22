@@ -53,9 +53,6 @@ def getHeadRequest(serv, objName):
     return ("HEAD {o} HTTP/1.1\r\n"+
         "Host: {s}\r\n\r\n").format(o=objName, s=serv)
 
-def getHeadRangeOnlyRequest(serv,objName,start_pos,end_pos):
-    return ("HEAD {o} HTTP/1.1\r\n"+"Host: {s}\r\n" + 
-        "Range: bytes={sp}-{ep}\r\n\r\n").format(o=objName, s=serv,sp=start_pos,ep=end_pos)  
 
 def getHeadRangeRequest(serv,objName,start_pos,end_pos,tag):
     return ("HEAD {o} HTTP/1.1\r\n"+"Host: {s}\r\n" + 
@@ -66,29 +63,11 @@ def mkDownloadRequest(serv, objName):
     return ("GET {o} HTTP/1.1\r\n"+
         "Host: {s}\r\n\r\n").format(o=objName, s=serv)
 
-def mkResumeRequest(serv, objName, start_pos, end_pos):
-    return ("GET {o} HTTP/1.1\r\n"+
-        "Host: {s}\r\n" + 
-        "Range: bytes={sp}-{ep}\r\n\r\n").format(o=objName, s=serv,sp=start_pos,ep=end_pos)
-
 def mkResumReqModified(serv,objName,start_pos,end_pos,tag):
     return ("GET {o} HTTP/1.1\r\n"+"Host: {s}\r\n" + 
         "Range: bytes={sp}-{ep}\r\n"+
         "If-Range: {t}\r\n\r\n").format(o=objName, s=serv,sp=start_pos,ep=end_pos,t=tag)
-
-def deleteHeader(file):
-    with open(file,'rb') as f:
-        data = f.read()
-    with open(file,'wb') as f:
-        f.write(data[data.find("\r\n\r\n")+4:])
     
-def append_new_content(data_string,exist_file):
-    data_string = data_string[data_string.find("\r\n\r\n")+4:]
-    with open(exist_file,'rb') as f:
-        exist_data = f.read()
-    with open(exist_file,'wb') as f:
-        f.write(exist_data+data_string)
-
 
 def split_header(out_file):
     header_dict = dict()
