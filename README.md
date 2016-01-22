@@ -2,7 +2,7 @@
 
 To run this program, go to the directory of this program by terminal, then:
 
-srget -o <saved_file_name> <Address>
+./srget -o [saved_file_name] [Address]
 
 where saved_file_name is your desired file's name to download and address including http.
 
