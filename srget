@@ -5,26 +5,28 @@ import os
 import sys
 import socket as c_sock
 
+
+
 output_file = None
 option_c = False
 numConn = 5
-dest = None
+dest_in = None
 path = '/'
 port = 80
 
 # Organize input-command line
 if len(sys.argv) == 4:
     output_file = sys.argv[2]
-    dest = sys.argv[3]
+    dest_in = sys.argv[3]
 elif len(sys.argv) == 5:
     output_file = sys.argv[2]
     option_c = True
-    dest = sys.argv[4]
+    dest_in = sys.argv[4]
 elif len(sys.argv) == 6:
     output_file = sys.argv[2]
     option_c = True
     numConn = sys.argv[4]
-    dest = sys.argv[5]
+    dest_in = sys.argv[5]
 
 # Organize address and port for connection
 def setAddress(addIn):
@@ -100,7 +102,6 @@ def split_header(out_file):
 
 def get_head_range(servName,portIn,reqHead,output_head):
     head_sock = c_sock.socket(c_sock.AF_INET,c_sock.SOCK_STREAM)
-    print servName,portIn
     head_sock.connect((servName,portIn))
 
     head_sock.send(reqHead)
@@ -114,12 +115,12 @@ def get_head_range(servName,portIn,reqHead,output_head):
             head_sock.close()
             break
 
+
     return sys.getsizeof(data)
 
 def get_head(servName,portIn,reqHead,output_head):
     head_sock = c_sock.socket(c_sock.AF_INET,c_sock.SOCK_STREAM)
 
-    print servName,portIn
     head_sock.connect((servName,portIn))
 
     head_sock.send(reqHead)
@@ -143,15 +144,12 @@ def resume_connect(servName,portIn,start_byte,end_byte,path,version_reference,ou
     reqResume = mkResumReqModified(servName,path,start_byte,end_byte,version_reference)
     # make socket connection
     sock = c_sock.socket(c_sock.AF_INET,c_sock.SOCK_STREAM)
-    print servName
     sock.connect((servName,portIn))
     sock.send(reqResume)
     with open(output_file,'rb') as rf:
         data_stream = rf.read()
     head = ""
     with open('temp','wb') as f:
-
-        print '======================'
 
         while True:
             head = sock.recv(1024)
@@ -169,7 +167,6 @@ def resume_connect(servName,portIn,start_byte,end_byte,path,version_reference,ou
             current = sock.recv(1024000)
             f.write(current)
             data_stream+=current
-
             if sys.getsizeof(data_stream) == end_byte+1+head_range_length:
                 sock.close()
                 break
@@ -177,19 +174,17 @@ def resume_connect(servName,portIn,start_byte,end_byte,path,version_reference,ou
 
 
 
-def connect(servName,portIn,startByte,path):
+def connect(servName,portIn,startByte,path,output_file):
 
     # get content length from header
     reqHead = getHeadRequest(servName,path)
     header_length = get_head(servName,portIn,reqHead,output_file+'.head')
     header_content = split_header(output_file+".head")
-    content_length = int(header_content['Content-Length'])
 
+    content_length = long(header_content['Content-Length'])
 
     request = mkDownloadRequest(servName,path)
-    print request
     sock = c_sock.socket(c_sock.AF_INET, c_sock.SOCK_STREAM)
-    print servName,portIn
     sock.connect((servName,portIn))
 
 
@@ -202,72 +197,89 @@ def connect(servName,portIn,startByte,path):
             current = sock.recv(1024)
             f.write(current)
             data += current
-            print data
             if('\r\n\r\n' in data):
                 break
     with open(output_file,'rb') as rf:
         data = rf.read()
-
     
     with open(output_file,'wb') as f:
         f.write(data[data.find("\r\n\r\n")+4:])
-        print data, getSize(output_file)
+
         while True:
             current = sock.recv(1024000)
             f.write(current)
             data += current
-            print sys.getsizeof(data) ,content_length, header_length
             if sys.getsizeof(data) == content_length + header_length:
                 sock.close()
                 break
             
-    
-if not (os.path.exists(output_file)):
-    addr,dest,port,path = setAddress(dest)
-    print dest,port
+def new_download():
+    addr,dest,port,path = setAddress(dest_in)
     # Check the scheme
     if addr.scheme == 'http':
-        connect(dest,port,0,path)
-        print getSize(output_file)
+        connect(dest,port,0,path,output_file+'.dwnld')
+        os.rename(output_file+'.dwnld',output_file)
+        os.remove(output_file+'.dwnld.head')
     else:
         print "Wrong format"
-    
-else:
-    addr,dest,port,path = setAddress(dest)
-    is_ETag = False
-    is_Date = False
-    header_dict = split_header(output_file+".head")
-    total_content_length = int(header_dict["Content-Length"])
-    try:
-        ETag = header_dict["ETag"]
-        is_ETag = True
-    
-    except:
-        try:
-            date_modified = header_dict["Last-Modified"]
-            is_Date = True
-        except:
-            is_Date = False
 
-    if is_ETag or is_Date:
-        file_size = getSize(output_file)
-        print file_size,total_content_length
-        if(total_content_length != file_size):
-            if is_ETag:
-                resume_connect(dest,port,file_size,total_content_length-1,path,ETag,output_file)
+
+if (not (os.path.exists(output_file))) and (not (os.path.exists(output_file+'.dwnld'))):
+    try:
+        new_download() 
+    except:
+        print "Connection error"   
+else:
+    if not (os.path.exists(output_file)):
+        try:
+            addr,dest,port,path = setAddress(dest_in)
+            is_ETag = False
+            is_Date = False
+            header_dict = split_header(output_file+".dwnld.head")
+            total_content_length = int(header_dict["Content-Length"])
+
+
+            try:
+                ETag = header_dict["ETag"]
+                is_ETag = True
+            
+            except:
+                try:
+                    date_modified = header_dict["Last-Modified"]
+                    is_Date = True
+                except:
+                    is_Date = False
+
+            if is_ETag or is_Date:
+                file_size = getSize(output_file+".dwnld")
+                # check that modified or not
+                head_req = getHeadRequest(dest,path)
+                get_head(dest,port,head_req,output_file+'_new.head')
+                new_header_content = split_header(output_file+"_new.head")
+                os.remove(output_file+"_new.head")
+                if is_ETag:
+                    if new_header_content["ETag"] != ETag:
+                        print "Your file has been modified, starting new download"
+                        new_download()
+                    
+                    else:
+                        resume_connect(dest,port,file_size,total_content_length-1,path,ETag,output_file+'.dwnld')
+                        os.rename(output_file+'.dwnld',output_file)
+                        os.remove(output_file+'.dwnld.head')
+
+                else:
+                    if new_header_content["Last-Modified"] != date_modified:
+                        print "Your file has been modified, starting new download"
+                        new_download()
+                    else:
+                        resume_connect(dest,port,file_size,total_content_length-1,path,date_modified,output_file+'.dwnld')
+                        os.rename(output_file+'.dwnld',output_file)
+                        os.remove(output_file+'.dwnld.head')
 
             else:
-                resume_connect(dest,port,file_size,total_content_length-1,path,date_modified,output_file)
-        else:
-            print "File already existed"
+                print "Your file cannot be resume. Start new downloading"
+                new_download()
+        except:
+            print "Connection error"
     else:
-        print "Your file cannot be resume. Start new downloading"
-        addr,dest,port,path = setAddress(dest)
-        print dest,port
-        # Check the scheme
-        if addr.scheme == 'http':
-            connect(dest,port,0,path)
-            print getSize(output_file)
-        else:
-            print "Wrong format"
-
+        print "File already existed"
