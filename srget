@@ -41,13 +41,12 @@ class HTTPClient(asyncore.dispatcher):
         self.create_socket(c_sock.AF_INET, c_sock.SOCK_STREAM)
         self.connect((host, portIn))
         self.host = host
-        self.recvbuf = ""
         self.logger = logging.getLogger(host+path)
         self.current_byte = start_byte
         self.output_file = output_file
-        self.output_file.seek(start_byte)
         self.header = ""
         self.wait_for_header = True
+        self.last_byte = end_byte
 
         self.sendbuf = ""
         ## make my request
@@ -63,7 +62,7 @@ class HTTPClient(asyncore.dispatcher):
         self.sendbuf += msg
 
     def handle_connect(self):
-        self.logger.debug("connection established")
+        pass
 
     def handle_close(self):
         self.logger.debug("got disconnected")
@@ -84,9 +83,6 @@ class HTTPClient(asyncore.dispatcher):
             self.output_file.write(buf)
             self.current_byte += len(buf)
 
-
-        #self.recvbuf.write(buf)
-
         self.logger.debug("recv {0} bytes".format(len(buf)))
 
     def writeable(self):
@@ -103,18 +99,30 @@ def byte_from_gap(lst):
         returned_list.append("bytes={s}-{e]").format(s=gap[0],e=gap[1])
     return returned_list
 
+def cut_whole_content(content):
+    start = 0
+    gap = 200000
+    end = content-gap
+    returned_gap = []
+    while start < end:
+        returned_gap.append((start,gap-1))
+        start += gap
+    returned_gap.append((start,content-1))
+    return returned_gap
+
+
 # Set byte range
-def cut_content(content,connection_number):
+def cut_content(content_list,connection_number):
     returned_list = []
     connection_number = int(connection_number)
-    start_point = 0
-    one_size = content/connection_number
+    start_point = content_list[0]
+    one_size = (content_list[1] - content_list[0]+1)/connection_number
     while connection_number > 1:
         end_point = start_point + one_size-1
         returned_list += [(start_point,end_point)]
         start_point += one_size
         connection_number -= 1
-    returned_list += [(start_point,content-1)]
+    returned_list += [(start_point,content_list[1])]
 
     return returned_list
 
@@ -141,22 +149,26 @@ def getSize(fileobject):
     
 def getHeadRequest(serv, objName):
     return ("HEAD {o} HTTP/1.1\r\n"+
-        "Host: {s}\r\n\r\n").format(o=objName, s=serv)
+        "Host: {s}\r\n"+
+        "Connection: close\r\n\r\n").format(o=objName, s=serv)
 
 
 def getHeadRangeRequest(serv,objName,start_pos,end_pos,tag):
     return ("HEAD {o} HTTP/1.1\r\n"+"Host: {s}\r\n" + 
         "Range: bytes={sp}-{ep}\r\n"+
-        "If-Range: {t}\r\n\r\n").format(o=objName, s=serv,sp=start_pos,ep=end_pos,t=tag)   
+        "If-Range: {t}\r\n"+
+        "Connection: close\r\n\r\n").format(o=objName, s=serv,sp=start_pos,ep=end_pos,t=tag)   
 
 def mkDownloadRequest(serv, objName):
     return ("GET {o} HTTP/1.1\r\n"+
-        "Host: {s}\r\n\r\n").format(o=objName, s=serv)
+        "Host: {s}\r\n"+
+        "Connection: close\r\n\r\n").format(o=objName, s=serv)
 
 def mkResumReqModified(serv,objName,start_pos,end_pos,tag):
     return ("GET {o} HTTP/1.1\r\n"+"Host: {s}\r\n" + 
         "Range: bytes={sp}-{ep}\r\n"+
-        "If-Range: {t}\r\n\r\n").format(o=objName, s=serv,sp=start_pos,ep=end_pos,t=tag)
+        "If-Range: {t}\r\n"+
+        "Connection: close\r\n\r\n").format(o=objName, s=serv,sp=start_pos,ep=end_pos,t=tag)
     
 
 def split_header(out_file):
@@ -248,14 +260,10 @@ def connect(servName,portIn,startByte,path,output_file):
     # get content length from header
     reqHead = getHeadRequest(servName,path)
     header_length = get_head(servName,portIn,reqHead,output_file+'.head')
-    header_content = split_header(output_file+".head")
-
-    content_length = long(header_content['Content-Length'])
 
     request = mkDownloadRequest(servName,path)
     sock = c_sock.socket(c_sock.AF_INET, c_sock.SOCK_STREAM)
     sock.connect((servName,portIn))
-
 
 
     sock.send(request)
@@ -277,11 +285,14 @@ def connect(servName,portIn,startByte,path,output_file):
         while True:
             current = sock.recv(1024000)
             f.write(current)
-            data += current
-            if sys.getsizeof(data) == content_length + header_length:
-                sock.close()
+            # data += current
+            # if sys.getsizeof(data) == content_length + header_length:
+            #     sock.close()
+            #     break
+            if len(current)==0:
                 break
-            
+
+
 def new_download():
     addr,dest,port,path = setAddress(dest_in)
     # Check the scheme
@@ -305,9 +316,11 @@ def basic_download():
                 addr,dest,port,path = setAddress(dest_in)
                 is_ETag = False
                 is_Date = False
-                header_dict = split_header(output_file+".dwnld.head")
-                total_content_length = int(header_dict["Content-Length"])
-
+                try:    
+                    header_dict = split_header(output_file+".dwnld.head")
+                    total_content_length = int(header_dict["Content-Length"])
+                except:
+                    pass
 
                 try:
                     ETag = header_dict["ETag"]
@@ -358,111 +371,144 @@ def basic_download():
 # for multiple connection
 def multi_download(connection_number):
     if (not (os.path.exists(output_file))) and (not (os.path.exists(output_file+'.dwnld'))):
-    #try:
-        is_ETag = False
-        is_Date = False
-        # 
-        addr,dest,port,path = setAddress(dest_in)
-
-        # get content_length + save header
-        reqHead = getHeadRequest(dest,path)
-        print "reqHead"
-        header_length = get_head(dest,port,reqHead,output_file+'.head')
-        print "header_length"
-        header_content = split_header(output_file+".head")
-        content_length = long(header_content['Content-Length'])
-
         try:
-            checked_date = header_dict["ETag"]
-            is_ETag = True
         
-        except:
-            try:
-                checked_date = header_dict["Last-Modified"]
-                is_Date = True
-            except:
-                checked_date = None
+            # 
+            addr,dest,port,path = setAddress(dest_in)
 
-# def __init__(self, host, path,portIn, start_byte,end_byte, checked_date,content_length,output_file):
-
-        # set each connection's range
-        connection_byte_range = cut_content(content_length,connection_number) 
-
-        # set up clients
-        clients = []
-        open_outfile = open(output_file,'wb')
-        open_outfile.write(" "*content_length)
-        for each_part in connection_byte_range:
-            #string_byte = "bytes={start}-{end}".format(start=each_part[0],end =each_part[1])
-            clients += [HTTPClient(dest,path,port,each_part[0],each_part[1],checked_date,open_outfile)]
-
-        print "Before loop"
-        logging.basicConfig(level=logging.DEBUG,
-        format="%(asctime)-15s %(name)s: %(message)s")
-        try:
-            asyncore.loop()
-        except:
-
-            picle_dict = {}
+            # get content_length + save header
+            reqHead = getHeadRequest(dest,path)
+            get_head(dest,port,reqHead,output_file+'.dwnld.head')
             
-
-            with open(output_file+'.pickle','wb') as h:
-                pickle.dump()
-
-
-    #except:
-    else:
-        if not (os.path.exists(output_file)):
+            # check resumable?
             try:
-                addr,dest,port,path = setAddress(dest_in)
-                is_ETag = False
-                is_Date = False
-                header_dict = split_header(output_file+".dwnld.head")
-                total_content_length = int(header_dict["Content-Length"])
+                header_content = split_header(output_file+".dwnld.head")
+                content_length = long(header_content['Content-Length'])
+            except:
+                print "This address is not possible for multiple connection. Download with 1 connection"
+                new_download()
 
 
-                try:
-                    ETag = header_dict["ETag"]
-                    is_ETag = True
-                
-                except:
-                    try:
-                        date_modified = header_dict["Last-Modified"]
-                        is_Date = True
-                    except:
-                        is_Date = False
 
-                if is_ETag or is_Date:
-                    file_size = getSize(output_file+".dwnld")
-                    # check that modified or not
-                    head_req = getHeadRequest(dest,path)
-                    get_head(dest,port,head_req,output_file+'_new.head')
-                    new_header_content = split_header(output_file+"_new.head")
-                    os.remove(output_file+"_new.head")
-                    if is_ETag:
-                        if new_header_content["ETag"] != ETag:
-                            print "Your file has been modified, starting new download"
-                            new_download()
-                        
-                        else:
-                            resume_connect(dest,port,file_size,total_content_length-1,path,ETag,output_file+'.dwnld')
-                            os.rename(output_file+'.dwnld',output_file)
-                            os.remove(output_file+'.dwnld.head')
+            # set each connection's partition
+            file_partition = cut_whole_content(content_length)
 
-                    else:
-                        if new_header_content["Last-Modified"] != date_modified:
-                            print "Your file has been modified, starting new download"
-                            new_download()
-                        else:
-                            resume_connect(dest,port,file_size,total_content_length-1,path,date_modified,output_file+'.dwnld')
-                            os.rename(output_file+'.dwnld',output_file)
-                            os.remove(output_file+'.dwnld.head')
+            open_outfile = open(output_file+'.dwnld','ab')
+            open_outfile.write(" "*content_length)
 
-                else:
-                    print "Your file cannot be resume. Start new downloading"
-                    new_download()
+
+            # work in each partition
+            try:
+                for each_partition in file_partition:
+                    connection_byte_range = cut_content(each_partition,connection_number)
+
+                    # set up clients
+                    clients = []    
+                    for each_part in connection_byte_range:
+                        #string_byte = "bytes={start}-{end}".format(start=each_part[0],end =each_part[1])
+                        clients += [HTTPClient(dest,path,port,each_part[0],each_part[1]," ",open_outfile)]
+                        # logging.basicConfig(level=logging.DEBUG,
+                        # format="%(asctime)-15s %(name)s: %(message)s")
+                        pickle_dict = {"Finished": each_part[1]}
+                        asyncore.loop()
+                        with open(output_file+'.pickle','wb') as handle:
+                            pickle.dump(pickle_dict,handle)
+
+                os.rename(output_file+'.dwnld',output_file)
+                os.remove(output_file+'.dwnld.head')
             except:
                 print "Connection error"
+                    # pickle_dict = {"Content-Length":content_length,"Progress":hold}
+                    # with open(output_file+'.pickle','wb') as handle:
+                    #     pickle.dump(pickle_dict,handle)
+        except:
+            # try with one connection else, error
+            pass
+    else:
+        if not (os.path.exists(output_file)):
+            # try:
+            with open(output_file+'.pickle','rb') as rf:
+                previous_progress = pickle.load(rf)
+            resume_start = previous_progress.values()[0]+1
+
+            # get ETAG or Last-Modified
+            addr,dest,port,path = setAddress(dest_in)
+            is_ETag = False
+            is_Date = False  
+            header_dict = split_header(output_file+".dwnld.head")
+            total_content_length = long(header_dict["Content-Length"])
+        
+            try:
+                checked_date = header_dict["ETag"]
+                is_ETag = True
+            
+            except:
+                try:
+                    checked_date = header_dict["Last-Modified"]
+                    is_Date = True
+                except:
+                    is_Date = False
+
+            if is_ETag or is_Date:
+
+                # check that modified or not
+                head_req = getHeadRequest(dest,path)
+                get_head(dest,port,head_req,output_file+'_new.head')
+                new_header_content = split_header(output_file+"_new.head")
+                os.remove(output_file+"_new.head")
+                if is_ETag:
+                    if new_header_content["ETag"] != checked_date:
+                        print "Your file has been modified, starting new download"
+                        os.remove(output_file+'.dwnld')
+                        os.remove(output_file+'.dwnld.head')
+                        multi_download(connection_number)
+
+                    else:
+                        print "Resume here"
+                        file_partition = cut_whole_content(total_content_length - resume_start)
+                        open_outfile = open(output_file+'.dwnld','ab')
+                        #try:
+                        for each_partition in file_partition:
+                            connection_byte_range = cut_content(each_partition,connection_number)
+
+                            # set up clients
+                            clients = []    
+                            for each_part in connection_byte_range:
+                                #string_byte = "bytes={start}-{end}".format(start=each_part[0],end =each_part[1])
+                                clients += [HTTPClient(dest,path,port,each_part[0],each_part[1],checked_date,open_outfile)]
+                                # logging.basicConfig(level=logging.DEBUG,
+                                # format="%(asctime)-15s %(name)s: %(message)s")
+                                pickle_dict = {"Finished": each_part[1]}
+                                asyncore.loop()
+                                with open(output_file+'.pickle','wb') as handle:
+                                    pickle.dump(pickle_dict,handle)
+
+                        os.rename(output_file+'.dwnld',output_file)
+                        os.remove(output_file+'.dwnld.head')
+                        # except:
+                        #     print "Connection error"
+                        #     return None
+
+
+
+                else:
+                    if new_header_content["Last-Modified"] != checked_date:
+                        print "Your file has been modified, starting new download"
+                        os.remove(output_file+'.dwnld')
+                        os.remove(output_file+'.dwnld.head')
+                        multi_download(connection_number)
+                    else:
+                        pass
+
+            else:
+                print "Your file cannot be resume. Start new downloading"
+                os.remove(output_file+'.dwnld')
+                os.remove(output_file+'.dwnld.head')
+                multi_download(connection_number)
+
+            # except:
+                print "File has been damaged, restart downloading"
+
         else:
             print "File already existed"
 
