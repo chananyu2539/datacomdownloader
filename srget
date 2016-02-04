@@ -496,11 +496,10 @@ def multi_download(connection_number,addr_in):
 
             # set each connection's partition
             file_partition = cut_whole_content(content_length)
+            with open(output_file+'.dwnld','wb') as wf:
+                wf.write(" " * content_length)
 
-            open_outfile = open(output_file+'.dwnld','ab')
-            open_outfile.write(" "*content_length)
-
-
+            open_outfile = open(output_file+'.dwnld',"r+b")
             # work in each partition
             try:
                 for each_partition in file_partition:
@@ -513,10 +512,10 @@ def multi_download(connection_number,addr_in):
                         
                         pickle_dict = {"Finished": each_part[1]}
                         
-                        asyncore.loop()
+                    asyncore.loop()
                         
-                        with open(output_file+'.pickle','wb') as handle:
-                            pickle.dump(pickle_dict,handle)
+                    with open(output_file+'.pickle','wb') as handle:
+                        pickle.dump(pickle_dict,handle)
 
                 try:
                     os.rename(output_file+'.dwnld',output_file)
@@ -596,7 +595,7 @@ def multi_download(connection_number,addr_in):
 
                         else:
                             file_partition = cut_whole_content(total_content_length - resume_start)
-                            open_outfile = open(output_file+'.dwnld','ab')
+                            open_outfile = open(output_file+'.dwnld','r+b')
                             try:
                                 for each_partition in file_partition:
                                     connection_byte_range = cut_content(each_partition,connection_number,resume_start)
@@ -648,7 +647,7 @@ def multi_download(connection_number,addr_in):
                             multi_download(connection_number,addr_in)
                         else:
                             file_partition = cut_whole_content(total_content_length - resume_start)
-                            open_outfile = open(output_file+'.dwnld','ab')
+                            open_outfile = open(output_file+'.dwnld','r+b')
                             try:
                                 for each_partition in file_partition:
                                     connection_byte_range = cut_content(each_partition,connection_number,resume_start)
