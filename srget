@@ -606,11 +606,11 @@ def multi_download(connection_number,addr_in):
                                         clients += [HTTPClient(dest,path,port,each_part[0],each_part[1],checked_date,open_outfile)]
                                         pickle_dict = {"Finished": each_part[1]}
                                         
-                                        asyncore.loop()
+                                    asyncore.loop()
                                         
-                                        # saved the last-finished byte
-                                        with open(output_file+'.pickle','wb') as handle:
-                                            pickle.dump(pickle_dict,handle)
+                                    # saved the last-finished byte
+                                    with open(output_file+'.pickle','wb') as handle:
+                                        pickle.dump(pickle_dict,handle)
 
                                 try:
                                     os.rename(output_file+'.dwnld',output_file)
@@ -658,10 +658,10 @@ def multi_download(connection_number,addr_in):
                                         clients += [HTTPClient(dest,path,port,each_part[0],each_part[1],checked_date,open_outfile)]
                                         pickle_dict = {"Finished": each_part[1]}
                                         
-                                        asyncore.loop()
-                                        
-                                        with open(output_file+'.pickle','wb') as handle:
-                                            pickle.dump(pickle_dict,handle)
+                                    asyncore.loop()
+                                    
+                                    with open(output_file+'.pickle','wb') as handle:
+                                        pickle.dump(pickle_dict,handle)
 
                                 try:
                                     os.rename(output_file+'.dwnld',output_file)
