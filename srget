@@ -41,7 +41,6 @@ class HTTPClient(asyncore.dispatcher):
         self.create_socket(c_sock.AF_INET, c_sock.SOCK_STREAM)
         self.connect((host, portIn))
         self.host = host
-        self.logger = logging.getLogger(host+path)
         self.current_byte = start_byte
         self.output_file = output_file
         self.header = ""
@@ -64,25 +63,26 @@ class HTTPClient(asyncore.dispatcher):
         pass
 
     def handle_close(self):
-        self.logger.debug("got disconnected")
         self.close()
 
     def handle_read(self):
         buf = self.recv(8192)
-        self.output_file.seek(self.current_byte)
-        if self.wait_for_header and ('\r\n\r\n' in self.header or '\r\n\r\n' in buf):
-            self.wait_for_header = False
-            data_wo_header = buf[buf.find('\r\n\r\n')+4:]
-            self.output_file.write(data_wo_header)
+        if self.wait_for_header:
+            self.header+=buf
 
+        self.output_file.seek(self.current_byte)
+        
+        if self.wait_for_header and '\r\n\r\n' in self.header:
+            self.wait_for_header = False
+            data_wo_header = self.header[self.header.find('\r\n\r\n')+4:]
+            self.output_file.write(data_wo_header)
             self.current_byte += len(data_wo_header)
-        elif self.wait_for_header:
-            self.header += buf
+
+
         else:
             self.output_file.write(buf)
             self.current_byte += len(buf)
 
-        self.logger.debug("recv {0} bytes".format(len(buf)))
 
     def writeable(self):
         return len(self.sendbuf) > 0
@@ -174,17 +174,17 @@ def cut_whole_content(content):
 
 
 # Set byte range
-def cut_content(content_list,connection_number):
+def cut_content(content_list,connection_number,start_byte):
     returned_list = []
     connection_number = int(connection_number)
     start_point = content_list[0]
     one_size = (content_list[1] - content_list[0]+1)/connection_number
     while connection_number > 1:
         end_point = start_point + one_size-1
-        returned_list += [(start_point,end_point)]
+        returned_list += [(start_point+start_byte,end_point+start_byte)]
         start_point += one_size
         connection_number -= 1
-    returned_list += [(start_point,content_list[1])]
+    returned_list += [(start_point+start_byte,content_list[1]+start_byte)]
 
     return returned_list
 
@@ -504,7 +504,7 @@ def multi_download(connection_number,addr_in):
             # work in each partition
             try:
                 for each_partition in file_partition:
-                    connection_byte_range = cut_content(each_partition,connection_number)
+                    connection_byte_range = cut_content(each_partition,connection_number,0)
 
                     # set up clients
                     clients = []    
@@ -599,7 +599,7 @@ def multi_download(connection_number,addr_in):
                             open_outfile = open(output_file+'.dwnld','ab')
                             try:
                                 for each_partition in file_partition:
-                                    connection_byte_range = cut_content(each_partition,connection_number)
+                                    connection_byte_range = cut_content(each_partition,connection_number,resume_start)
 
                                     # set up clients
                                     clients = []    
@@ -651,7 +651,7 @@ def multi_download(connection_number,addr_in):
                             open_outfile = open(output_file+'.dwnld','ab')
                             try:
                                 for each_partition in file_partition:
-                                    connection_byte_range = cut_content(each_partition,connection_number)
+                                    connection_byte_range = cut_content(each_partition,connection_number,resume_start)
 
                                     # set up clients
                                     clients = []    
