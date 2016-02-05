@@ -127,18 +127,22 @@ class Single_HTTPClient(asyncore.dispatcher):
 
     def handle_read(self):
         buf = self.recv(8192)
-        if self.wait_for_header and ('\r\n\r\n' in self.header or '\r\n\r\n' in buf):
+        if self.wait_for_header:
+            self.header+=buf
+
+        self.output_file.seek(self.current_byte)
+        
+        if self.wait_for_header and '\r\n\r\n' in self.header:
             self.wait_for_header = False
-            data_wo_header = buf[buf.find('\r\n\r\n')+4:]
+            data_wo_header = self.header[self.header.find('\r\n\r\n')+4:]
             self.output_file.write(data_wo_header)
             self.current_byte += len(data_wo_header)
             self.pickle_d["Finished"] = self.current_byte
             with open(self.pickle_out,'wb') as rf:
                 pickle.dump(self.pickle_d,rf)
 
-        elif self.wait_for_header:
-            self.header += buf
-        
+
+
         else:
             self.output_file.write(buf)
             self.current_byte += len(buf)
@@ -596,6 +600,15 @@ def multi_download(connection_number,addr_in):
                         else:
                             file_partition = cut_whole_content(total_content_length - resume_start)
                             open_outfile = open(output_file+'.dwnld','r+b')
+                            
+                            # handle redirect
+                            try:
+                                path = header_content["location"]
+                                addr_in = "http://"+dest+'/'+path
+                                multi_download(connection_number,addr_in)
+                                return None
+                            except:
+                                pass
                             try:
                                 for each_partition in file_partition:
                                     connection_byte_range = cut_content(each_partition,connection_number,resume_start)
@@ -648,6 +661,15 @@ def multi_download(connection_number,addr_in):
                         else:
                             file_partition = cut_whole_content(total_content_length - resume_start)
                             open_outfile = open(output_file+'.dwnld','r+b')
+
+                            # handle reconnect
+                            try:
+                                path = header_content["location"]
+                                addr_in = "http://"+dest+'/'+path
+                                multi_download(connection_number,addr_in)
+                                return None
+                            except:
+                                pass
                             try:
                                 for each_partition in file_partition:
                                     connection_byte_range = cut_content(each_partition,connection_number,resume_start)
