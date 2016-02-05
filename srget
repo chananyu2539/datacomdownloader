@@ -550,9 +550,22 @@ def multi_download(connection_number,addr_in):
                 addr,dest,port,path = setAddress(addr_in)
                 is_ETag = False
                 is_Date = False  
-                header_dict = split_header(output_file+".dwnld.head")
-                total_content_length = long(header_dict["Content-Length"])
-            
+                header_dict = split_header(output_file+".dwnld.head")               
+                # handle redirect
+                try:
+                    path = header_content["location"]
+                    addr_in = "http://"+dest+'/'+path
+                    multi_download(connection_number,addr_in)
+                    return None
+                except:
+                    pass
+                try:
+                    total_content_length = long(header_dict["Content-Length"])
+                except:
+                    print "This address is not possible for multiple connection. Download with 1 connection"
+                    basic_download(addr_in)
+                    return None
+
                 # get ETAG or last-modifed date
                 try:
                     checked_date = header_dict["ETag"]
@@ -600,15 +613,7 @@ def multi_download(connection_number,addr_in):
                         else:
                             file_partition = cut_whole_content(total_content_length - resume_start)
                             open_outfile = open(output_file+'.dwnld','r+b')
-                            
-                            # handle redirect
-                            try:
-                                path = header_content["location"]
-                                addr_in = "http://"+dest+'/'+path
-                                multi_download(connection_number,addr_in)
-                                return None
-                            except:
-                                pass
+
                             try:
                                 for each_partition in file_partition:
                                     connection_byte_range = cut_content(each_partition,connection_number,resume_start)
@@ -662,14 +667,6 @@ def multi_download(connection_number,addr_in):
                             file_partition = cut_whole_content(total_content_length - resume_start)
                             open_outfile = open(output_file+'.dwnld','r+b')
 
-                            # handle reconnect
-                            try:
-                                path = header_content["location"]
-                                addr_in = "http://"+dest+'/'+path
-                                multi_download(connection_number,addr_in)
-                                return None
-                            except:
-                                pass
                             try:
                                 for each_partition in file_partition:
                                     connection_byte_range = cut_content(each_partition,connection_number,resume_start)
